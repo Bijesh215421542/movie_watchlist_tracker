@@ -1,20 +1,37 @@
+<?php
+session_start();
+require_once 'db.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit;
+}
+
+$userId =$_SESSION['user_id'];
+
+// Fetch movies joined with the logged-in user's individual statuses
+$stmt =$pdo->prepare("
+    SELECT m.*, COALESCE(ums.status, 'none') AS status 
+    FROM movies m 
+    LEFT JOIN user_movie_status ums ON m.id = ums.movie_id AND ums.user_id = ? 
+    ORDER BY m.id DESC
+");
+$stmt->execute([$userId]);
+$dbFilms =$stmt->fetchAll();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin Dashboard - CINETRACK</title>
+  <title>Movie Watchlist Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  
-  <!-- External CSS files -->
   <link rel="stylesheet" href="dashboard.css" />
-  <link rel="stylesheet" href="admin.css" />
 </head>
 <body>
   <div class="dashboard">
-    <!-- Header -->
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">
@@ -25,219 +42,210 @@
         </div>
         <div class="brand-text">
           <h1>🎬 Cinetrack</h1>
-          <span>ADMINISTRATION PANEL</span>
+          <span>YOUR FILM JOURNAL</span>
         </div>
       </div>
-
-      <div class="admin-header-actions">
-        <span class="admin-badge-header">ADMIN</span>
-        <div class="menu-container">
-          <button class="menu-btn" id="menuToggleBtn">
-            Account
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </button>
-          <ul class="menu-dropdown" id="menuDropdown">
-            <li>
-              <button class="menu-item logout" id="logoutBtn">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                  <polyline points="16 17 21 12 16 7"/>
-                  <line x1="21" y1="12" x2="9" y2="12"/>
-                </svg>
-                Logout
-              </button>
-            </li>
-          </ul>
-        </div>
+      <div class="menu-container">
+        <button class="menu-btn" id="menuToggleBtn">
+          Menu
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+        <ul class="menu-dropdown" id="menuDropdown">
+          <li>
+            <button class="menu-item" id="randomizeBtn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+              </svg>
+              Pick Random 🎲
+            </button>
+          </li>
+          <li class="menu-divider"></li>
+          <li>
+            <a href="logout.php" class="menu-item logout" style="text-decoration:none;">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              Logout
+            </a> 
+          </li>
+        </ul>
       </div>
     </header>
 
-    <!-- Main Content -->
-    <main class="admin-section">
-      <!-- Stats -->
-      <div class="admin-grid">
-        <div class="stat-card">
-          <h3>TOTAL MOVIES</h3>
-          <div class="value" id="statMovies">10</div>
-        </div>
-        <div class="stat-card">
-          <h3>REGISTERED USERS</h3>
-          <div class="value">128</div>
-        </div>
-        <div class="stat-card">
-          <h3>SYSTEM STATUS</h3>
-          <div class="value status-active">● Active</div>
-        </div>
+    <div class="controls">
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-filter="all">All Films <span class="count">0</span></button>
+        <button class="tab" data-filter="watchlist">Watchlist <span class="count">0</span></button>
+        <button class="tab" data-filter="watched">Watched <span class="count">0</span></button>
+        <button class="tab" data-filter="favorite">Favorites <span class="count">0</span></button>
       </div>
-
-      <!-- Catalogue Table -->
-      <div class="data-table-container">
-        <div class="table-header-action">
-          <h2>Manage Catalogue</h2>
-          <button class="primary-btn" id="openAddModalBtn">+ Add New Film</button>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>TITLE</th>
-              <th>DIRECTOR</th>
-              <th>YEAR</th>
-              <th>GENRE</th>
-              <th>ACTION</th>
-            </tr>
-          </thead>
-          <tbody id="movieTableBody">
-            <!-- Dynamically populated -->
-          </tbody>
-        </table>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/>
+          <path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8"/>
+        </svg>
+        <input id="searchInput" type="text" placeholder="Search title, director, genre..." />
       </div>
-    </main>
-  </div>
-
-  <!-- Add Film Modal -->
-  <div class="modal-overlay" id="addFilmModal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>Add New Film</h3>
-        <button class="close-btn" id="closeAddModalBtn">&times;</button>
-      </div>
-      <form id="addFilmForm">
-        <div class="form-group">
-          <label for="filmTitle">MOVIE TITLE</label>
-          <input type="text" id="filmTitle" placeholder="e.g. Dune: Part Two" required />
-        </div>
-
-        <div class="form-group">
-          <label for="filmDirector">DIRECTOR</label>
-          <input type="text" id="filmDirector" placeholder="e.g. Denis Villeneuve" required />
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="filmYear">RELEASE YEAR</label>
-            <input type="number" id="filmYear" placeholder="2024" required min="1888" max="2100" />
-          </div>
-          <div class="form-group">
-            <label for="filmGenre">GENRE</label>
-            <input type="text" id="filmGenre" placeholder="e.g. SCI-FI" required />
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="filmNote">NOTES / DESCRIPTION</label>
-          <textarea id="filmNote" rows="3" placeholder="Brief summary or commentary..."></textarea>
-        </div>
-
-        <div class="modal-actions">
-          <button type="button" class="danger-btn" id="cancelModalBtn">Cancel</button>
-          <button type="submit" class="primary-btn">Save Film</button>
-        </div>
-      </form>
     </div>
+
+    <main class="grid" id="grid"></main>
   </div>
 
-  <script>
-    // Route Security Guard
-    if (sessionStorage.getItem("userRole") !== "admin") {
-      window.location.href = "login.html";
+  <button id="backToTopBtn" class="back-to-top" title="Back to Top">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
+      <polyline points="18 15 12 9 6 15"></polyline>
+    </svg>
+  </button>
+
+<script>
+  let films = <?php echo json_encode($dbFilms ?: []); ?>;
+
+  const badgeIcons = {
+    watched: `<svg viewBox="0 0 24 24" fill="none"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/></svg>`,
+    favorite: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.8 4c2.3-0.3 4.3 1 6.2 3.2C14 5 16 3.7 18.2 4c3.8 0.5 5.5 4.2 3.8 7.7C19.5 16.4 12 21 12 21z" stroke="currentColor" stroke-width="1.8"/></svg>`,
+    watchlist: `<svg viewBox="0 0 24 24" fill="none"><path d="M6 3h12v18l-6-4-6 4V3z" stroke="currentColor" stroke-width="1.8"/></svg>`
+  };
+
+  const badgeLabel = { watched: "WATCHED", favorite: "FAVORITE", watchlist: "WATCHLIST" };
+
+  const grid = document.getElementById("grid");
+  const searchInput = document.getElementById("searchInput");
+  const tabs = document.getElementById("tabs");
+  const randomizeBtn = document.getElementById("randomizeBtn");
+  const menuToggleBtn = document.getElementById("menuToggleBtn");
+  const menuDropdown = document.getElementById("menuDropdown");
+
+  const state = { filter: "all", query: "" };
+
+  function getFilteredFilms() {
+    const q = state.query.toLowerCase().trim();
+    return films.filter(f => {
+      const matchesFilter = state.filter === "all" || f.status === state.filter;
+      const matchesSearch = !q || [f.title, f.director, f.genre].join(" ").toLowerCase().includes(q);
+      return matchesFilter && matchesSearch;
+    });
+  }
+
+  function updateStats() {
+    const counts = document.querySelectorAll(".tab .count");
+    counts[0].textContent = films.length;
+    counts[1].textContent = films.filter(f => f.status === "watchlist").length;
+    counts[2].textContent = films.filter(f => f.status === "watched").length;
+    counts[3].textContent = films.filter(f => f.status === "favorite").length;
+  }
+
+  function createCard(film) {
+    const card = document.createElement("article");
+    card.className = "card";
+    card.dataset.id = film.id;
+    card.innerHTML = `
+      <div class="poster ${film.art || 'p1'}">
+        <div class="badge ${film.status}">
+          ${badgeIcons[film.status] || ''}
+          ${badgeLabel[film.status] || ''}
+        </div>
+        <div class="poster-actions">
+          <button class="action-btn" data-status="watchlist">Watchlist</button>
+          <button class="action-btn" data-status="watched">Watched</button>
+          <button class="action-btn" data-status="favorite">Favorite</button>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="title-row">
+          <h2>${film.title}</h2>
+          <span class="year">${film.year}</span>
+        </div>
+        <div class="director">${film.director}</div>
+        <div class="divider"></div>
+        <div class="genre">${film.genre}</div>
+        <button class="toggle-desc-btn">Show Description</button>
+        <div class="description-container hidden">
+          <div class="note">${film.note || 'No description available.'}</div>
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
+  function render() {
+    updateStats();
+    grid.innerHTML = "";
+    const filtered = getFilteredFilms();
+    if (!filtered.length) {
+      grid.innerHTML = `<p class="empty-state">No films match your search.</p>`;
+      return;
     }
+    filtered.forEach(film => grid.appendChild(createCard(film)));
+  }
 
-    const films = [
-      { id: 1, title:"Inception", year:2010, director:"Christopher Nolan", genre:"SCI-FI" },
-      { id: 2, title:"The Godfather", year:1972, director:"Francis Ford Coppola", genre:"CRIME" },
-      { id: 3, title:"Parasite", year:2019, director:"Bong Joon-ho", genre:"THRILLER" },
-      { id: 4, title:"Blade Runner 2049", year:2017, director:"Denis Villeneuve", genre:"SCI-FI" },
-      { id: 5, title:"Mulholland Drive", year:2001, director:"David Lynch", genre:"MYSTERY" },
-      { id: 6, title:"There Will Be Blood", year:2007, director:"Paul Thomas Anderson", genre:"DRAMA" },
-      { id: 7, title:"The Shining", year:1980, director:"Stanley Kubrick", genre:"HORROR" },
-      { id: 8, title:"Melancholia", year:2011, director:"Lars von Trier", genre:"DRAMA" },
-      { id: 9, title:"Nosferatu", year:2024, director:"Robert Eggers", genre:"HORROR" },
-      { id: 10, title:"The Witch", year:2015, director:"Robert Eggers", genre:"HORROR" }
-    ];
+  async function setFilmStatus(id, newStatus) {
+    const film = films.find(f => f.id === id);
+    if (!film) return;
+    
+    const nextStatus = film.status === newStatus ? "none" : newStatus;
 
-    function renderTable() {
-      const tbody = document.getElementById("movieTableBody");
-      tbody.innerHTML = "";
-      document.getElementById("statMovies").textContent = films.length;
-
-      films.forEach(film => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>#${film.id}</td>
-          <td><strong>${film.title}</strong></td>
-          <td>${film.director}</td>
-          <td>${film.year}</td>
-          <td>${film.genre}</td>
-          <td><button class="danger-btn" onclick="deleteFilm(${film.id})">Remove</button></td>
-        `;
-        tbody.appendChild(tr);
+    try {
+      const res = await fetch('api.php?action=update_status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ movie_id: id, status: nextStatus })
       });
-    }
-
-    function deleteFilm(id) {
-      const index = films.findIndex(f => f.id === id);
-      if (index !== -1) {
-        films.splice(index, 1);
-        renderTable();
+      const data = await res.json();
+      if (data.success) {
+        film.status = nextStatus;
+        render();
+      } else {
+        alert("Failed to update status: " + data.error);
       }
+    } catch (err) {
+      console.error(err);
+      alert("Network error. Unable to save status.");
     }
+  }
 
-    // Modal controls
-    const modal = document.getElementById("addFilmModal");
-    const openModalBtn = document.getElementById("openAddModalBtn");
-    const closeModalBtn = document.getElementById("closeAddModalBtn");
-    const cancelModalBtn = document.getElementById("cancelModalBtn");
-    const addFilmForm = document.getElementById("addFilmForm");
-
-    function openModal() { modal.classList.add("active"); }
-    function closeModal() { 
-      modal.classList.remove("active");
-      addFilmForm.reset();
+  grid.addEventListener("click", (e) => {
+    const actionBtn = e.target.closest(".action-btn");
+    if (actionBtn) {
+      const card = actionBtn.closest(".card");
+      setFilmStatus(parseInt(card.dataset.id, 10), actionBtn.dataset.status);
+      return;
     }
+    const descBtn = e.target.closest(".toggle-desc-btn");
+    if (descBtn) {
+      const containerEl = descBtn.nextElementSibling;
+      const isHidden = containerEl.classList.toggle("hidden");
+      descBtn.textContent = isHidden ? "Show Description" : "Hide Description";
+    }
+  });
 
-    openModalBtn.addEventListener("click", openModal);
-    closeModalBtn.addEventListener("click", closeModal);
-    cancelModalBtn.addEventListener("click", closeModal);
+  tabs.addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab");
+    if (!btn) return;
+    state.filter = btn.dataset.filter;
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    btn.classList.add("active");
+    render();
+  });
 
-    // Form submission handler
-    addFilmForm.addEventListener("submit", (e) => {
-      e.preventDefault();
+  searchInput.addEventListener("input", (e) => {
+    state.query = e.target.value;
+    render();
+  });
 
-      const newFilm = {
-        id: films.length ? Math.max(...films.map(f => f.id)) + 1 : 1,
-        title: document.getElementById("filmTitle").value.trim(),
-        director: document.getElementById("filmDirector").value.trim(),
-        year: parseInt(document.getElementById("filmYear").value, 10),
-        genre: document.getElementById("filmGenre").value.trim().toUpperCase(),
-        note: document.getElementById("filmNote").value.trim()
-      };
+  menuToggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menuDropdown.classList.toggle("show");
+  });
 
-      films.unshift(newFilm);
-      renderTable();
-      closeModal();
-    });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".menu-container")) menuDropdown.classList.remove("show");
+  });
 
-    // Dropdown toggle logic
-    const menuToggleBtn = document.getElementById("menuToggleBtn");
-    const menuDropdown = document.getElementById("menuDropdown");
-    const logoutBtn = document.getElementById("logoutBtn");
-
-    menuToggleBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      menuDropdown.classList.toggle("show");
-    });
-
-    document.addEventListener("click", () => menuDropdown.classList.remove("show"));
-
-    logoutBtn.addEventListener("click", () => {
-      sessionStorage.clear();
-      window.location.href = "login.html";
-    });
-
-    renderTable();
-  </script>
+  render();
+</script>  
 </body>
 </html>
