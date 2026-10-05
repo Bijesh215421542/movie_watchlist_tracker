@@ -7,7 +7,9 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$userId = $_SESSION['user_id'];$isAdmin = isset($_SESSION['role']) &&$_SESSION['role'] === 'admin';
+$userId =$_SESSION['user_id'];
+
+// Fetch movies joined with logged-in user's personal movie status
 try {
     $stmt =$pdo->prepare("
         SELECT m.*, COALESCE(ums.status, 'none') AS status 
@@ -54,14 +56,6 @@ try {
           </svg>
         </button>
         <ul class="menu-dropdown" id="menuDropdown">
-          <?php if ($isAdmin): ?>
-          <li>
-            <a href="admin-dashboard.php" class="menu-item" style="text-decoration:none; color: #6366f1; font-weight:600;">
-              ⚙️ Admin Panel
-            </a>
-          </li>
-          <li class="menu-divider"></li>
-          <?php endif; ?>
           <li>
             <button class="menu-item" id="randomizeBtn">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
