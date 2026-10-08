@@ -10,13 +10,13 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 
 // Live SQL stats and movie list
 try {
-    $movieCount =$pdo->query("SELECT COUNT(*) FROM movies")->fetchColumn();
-    $userCount =$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
-    $stmt =$pdo->query("SELECT * FROM movies ORDER BY id DESC");
-    $dbFilms =$stmt->fetchAll();
+    $movieCount = (int)$pdo->query("SELECT COUNT(*) FROM movies")->fetchColumn();
+    $userCount  = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+    $stmt       =$pdo->query("SELECT * FROM movies ORDER BY id DESC");
+    $dbFilms    =$stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {$movieCount = 0;
-    $userCount = 0;
-    $dbFilms = [];
+    $userCount  = 0;
+    $dbFilms    = [];
 }
 ?>
 <!DOCTYPE html>
