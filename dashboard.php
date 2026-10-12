@@ -243,6 +243,38 @@ try {
     menuDropdown.classList.toggle("show");
   });
 
+  // Randomize button click listener logic
+  randomizeBtn.addEventListener("click", () => {
+    const availableFilms = getFilteredFilms();
+    if (!availableFilms.length) return;
+
+    // Clear previous highlight
+    document.querySelectorAll(".card.highlighted").forEach(c => c.classList.remove("highlighted"));
+
+    // Pick a random film from currently filtered list
+    const chosenFilm = availableFilms[Math.floor(Math.random() * availableFilms.length)];
+    const cardEl = document.querySelector(`.card[data-id="${chosenFilm.id}"]`);
+
+    if (cardEl) {
+      cardEl.classList.add("highlighted");
+      cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    menuDropdown.classList.remove("show");
+  });
+
+  window.addEventListener("scroll", () => {
+    if (window.scrollY > 300) {
+      backToTopBtn.classList.add("visible");
+    } else {
+      backToTopBtn.classList.remove("visible");
+    }
+  });
+
+  backToTopBtn.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".menu-container")) menuDropdown.classList.remove("show");
   });
