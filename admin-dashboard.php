@@ -10,13 +10,14 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 
 // Live SQL stats and movie list
 try {
-    $movieCount = (int)$pdo->query("SELECT COUNT(*) FROM movies")->fetchColumn();
-    $userCount  = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
-    $stmt       =$pdo->query("SELECT * FROM movies ORDER BY id DESC");
-    $dbFilms    =$stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {$movieCount = 0;
-    $userCount  = 0;
-    $dbFilms    = [];
+    $movieCount = $pdo->query("SELECT COUNT(*) FROM movies")->fetchColumn();
+    $userCount = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+    $stmt = $pdo->query("SELECT * FROM movies ORDER BY id DESC");
+    $dbFilms = $stmt->fetchAll();
+} catch (Exception $e) {
+    $movieCount = 0;
+    $userCount = 0;
+    $dbFilms = [];
 }
 ?>
 <!DOCTYPE html>
@@ -113,7 +114,7 @@ try {
               <th>DIRECTOR</th>
               <th>YEAR</th>
               <th>GENRE</th>
-              <th>ACTION</th>
+              <th>ACTIONS</th>
             </tr>
           </thead>
           <tbody id="movieTableBody"></tbody>
@@ -122,14 +123,16 @@ try {
     </main>
   </div>
 
-  <!-- Add Film Modal -->
+  <!-- Add / Edit Film Modal -->
   <div class="modal-overlay" id="addFilmModal">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>Add New Film</h3>
+        <h3 id="modalTitle">Add New Film</h3>
         <button class="close-btn" id="closeAddModalBtn">&times;</button>
       </div>
       <form id="addFilmForm">
+        <input type="hidden" id="filmId" value="" />
+        
         <div class="form-group">
           <label for="filmTitle">MOVIE TITLE</label>
           <input type="text" id="filmTitle" placeholder="e.g. Dune: Part Two" required />
@@ -158,7 +161,7 @@ try {
 
         <div class="modal-actions">
           <button type="button" class="danger-btn" id="cancelModalBtn">Cancel</button>
-          <button type="submit" class="primary-btn">Save Film</button>
+          <button type="submit" class="primary-btn" id="saveFilmBtn">Save Film</button>
         </div>
       </form>
     </div>
@@ -180,7 +183,10 @@ try {
         <td>${film.director}</td>
         <td>${film.year}</td>
         <td>${film.genre}</td>
-        <td><button class="danger-btn" onclick="deleteFilm(${film.id})">Remove</button></td>
+        <td>
+          <button class="primary-btn" style="padding: 4px 10px; font-size: 11px; margin-right: 6px;" onclick="openEditModal(${film.id})">Edit</button>
+          <button class="danger-btn" onclick="deleteFilm(${film.id})">Remove</button>
+        </td>
       `;
       tbody.appendChild(tr);
     });
@@ -212,19 +218,44 @@ try {
   const closeModalBtn = document.getElementById("closeAddModalBtn");
   const cancelModalBtn = document.getElementById("cancelModalBtn");
   const addFilmForm = document.getElementById("addFilmForm");
+  const modalTitle = document.getElementById("modalTitle");
+  const filmIdInput = document.getElementById("filmId");
 
-  function openModal() { modal.classList.add("active"); }
+  function openAddModal() {
+    filmIdInput.value = "";
+    modalTitle.textContent = "Add New Film";
+    addFilmForm.reset();
+    modal.classList.add("active");
+  }
+
+  function openEditModal(id) {
+    const film = films.find(f => f.id === id);
+    if (!film) return;
+
+    filmIdInput.value = film.id;
+    modalTitle.textContent = "Edit Film: " + film.title;
+    document.getElementById("filmTitle").value = film.title;
+    document.getElementById("filmDirector").value = film.director;
+    document.getElementById("filmYear").value = film.year;
+    document.getElementById("filmGenre").value = film.genre;
+    document.getElementById("filmNote").value = film.note || "";
+
+    modal.classList.add("active");
+  }
+
   function closeModal() { 
     modal.classList.remove("active");
     addFilmForm.reset();
+    filmIdInput.value = "";
   }
 
-  openModalBtn.addEventListener("click", openModal);
+  openModalBtn.addEventListener("click", openAddModal);
   closeModalBtn.addEventListener("click", closeModal);
   cancelModalBtn.addEventListener("click", closeModal);
 
   addFilmForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const id = filmIdInput.value;
     const payload = {
       title: document.getElementById("filmTitle").value.trim(),
       director: document.getElementById("filmDirector").value.trim(),
@@ -233,22 +264,35 @@ try {
       note: document.getElementById("filmNote").value.trim()
     };
 
+    const action = id ? 'edit_film' : 'add_film';
+    if (id) payload.id = parseInt(id, 10);
+
     try {
-      const res = await fetch('api.php?action=add_film', {
+      const res = await fetch(`api.php?action=${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await res.json();
+      
       if (data.success) {
-        films.unshift(data.movie);
+        if (id) {
+          // Update existing item in local array
+          const index = films.findIndex(f => f.id == id);
+          if (index !== -1) {
+            films[index] = { ...films[index], ...data.movie };
+          }
+        } else {
+          // Add new item to array
+          films.unshift(data.movie);
+        }
         renderTable();
         closeModal();
       } else {
-        alert("Failed to add film: " + data.error);
+        alert("Operation failed: " + data.error);
       }
     } catch (e) {
-      alert("Error adding film.");
+      alert("Error processing request.");
     }
   });
 
