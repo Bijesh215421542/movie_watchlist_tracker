@@ -24,6 +24,7 @@ if ($action === 'add_film') {
     if (!$title || !$director || !$year || !$genre) {
         echo json_encode(['success' => false, 'error' => 'Please fill in all required fields.']);
         exit;
+        
     }
 
     try {
@@ -46,8 +47,39 @@ if ($action === 'add_film') {
         echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
     }
     exit;
-}
+} elseif ($action === 'edit_film') {
+    $id = intval($input['id'] ?? 0);
+    $title = trim($input['title'] ?? '');
+    $director = trim($input['director'] ?? '');
+    $year = intval($input['year'] ?? 0);
+    $genre = strtoupper(trim($input['genre'] ?? ''));
+    $note = trim($input['note'] ?? 'No description provided.');
 
+    if (!$id || !$title || !$director || !$year || !$genre) {
+        echo json_encode(['success' => false, 'error' => 'Missing required movie fields.']);
+        exit;
+    }
+
+    try {
+        $stmt = $pdo->prepare("UPDATE movies SET title = ?, director = ?, year = ?, genre = ?, note = ? WHERE id = ?");
+        $stmt->execute([$title, $director, $year, $genre, $note, $id]);
+
+        echo json_encode([
+            'success' => true,
+            'movie' => [
+                'id' => $id,
+                'title' => $title,
+                'director' => $director,
+                'year' => $year,
+                'genre' => $genre,
+                'note' => $note
+            ]
+        ]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
+    }
+    exit;
+}
 // DELETE FILM
 if ($action === 'delete_film') {
     $movieId = (int)($input['movie_id'] ?? 0);
@@ -67,6 +99,7 @@ if ($action === 'delete_film') {
     }
     exit;
 }
+
 
 // RESET FILMS
 if ($action === 'reset_films') {
