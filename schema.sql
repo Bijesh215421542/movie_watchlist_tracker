@@ -37,4 +37,11 @@ INSERT INTO `movies` (`id`, `title`, `director`, `year`, `genre`, `note`, `art`)
 (2, 'The Godfather', 'Francis Ford Coppola', 1972, 'CRIME', 'An offer I could not refuse.', 'p2'),
 (3, 'Parasite', 'Bong Joon-ho', 2019, 'THRILLER', 'Layers within layers.', 'p3'),
 (4, 'Blade Runner 2049', 'Denis Villeneuve', 2017, 'SCI-FI', 'Deakins at his peak.', 'p4'),
-(5, 'Mulholland Drive', 'David Lynch', 2001, 'MYSTERY', 'Lynch at his most opaque.', 'p5');
+(5, 'Mulholland Drive', 'David Lynch', 2001, 'MYSTERY', 'Lynch at his most opaque.', 'p5'),
+(6, 'Interstellar', 'Christopher Nolan', 2014, 'SCI-FI', 'Mankind was born on Earth. It was never meant to die here.', 'p6'),
+(7, 'Pulp Fiction', 'Quentin Tarantino', 1994, 'CRIME', 'The lives of two mob hitmen, a boxer, and a gangster intertwine.', 'p7'),
+(8, 'Spirited Away', 'Hayao Miyazaki', 2001, 'ANIMATION', 'A young girl wanders into a world ruled by gods, witches, and spirits.', 'p8'),
+(9, 'Whiplash', 'Damien Chazelle', 2014, 'DRAMA', 'A promising young drummer enrolls at a cut-throat music conservatory.', 'p9'),
+(10, 'The Dark Knight', 'Christopher Nolan', 2008, 'ACTION', 'When the menace known as the Joker wreaks havoc and chaos on Gotham.', 'p10'),
+(11, 'Dune: Part Two', 'Denis Villeneuve', 2024, 'SCI-FI', 'Paul Atreides unites with Chani and the Fremen to seek revenge.', 'p1'),
+(12, 'Fight Club', 'David Fincher', 1999, 'DRAMA', 'An unnamable insomniac and a soap maker form an underground fight club.', 'p2');
