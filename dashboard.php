@@ -7,19 +7,61 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$userId =$_SESSION['user_id'];
+$userId = $_SESSION['user_id'];
+$username = $_SESSION['username'] ?? 'User';
 
+// Handle status updates via URL parameters (No JavaScript required)
+if (isset($_GET['movie_id']) && isset($_GET['status'])) {
+    $movieId = (int) $_GET['movie_id'];
+    $newStatus = trim($_GET['status']);
+    $allowedStatuses = ['none', 'watchlist', 'watched', 'favorite'];
+
+    if ($movieId > 0 && in_array($newStatus, $allowedStatuses, true)) {
+        $checkStmt = $pdo->prepare("SELECT status FROM user_movie_status WHERE user_id = ? AND movie_id = ?");
+        $checkStmt->execute([$userId, $movieId]);
+        $currentRecord = $checkStmt->fetch();
+        $currentStatus = $currentRecord ? $currentRecord['status'] : 'none';
+        $targetStatus = ($currentStatus === $newStatus) ? 'none' : $newStatus;
+
+        if ($targetStatus === 'none') {
+            $stmt = $pdo->prepare("DELETE FROM user_movie_status WHERE user_id = ? AND movie_id = ?");
+            $stmt->execute([$userId, $movieId]);
+        } else {
+            $stmt = $pdo->prepare("
+                INSERT INTO user_movie_status (user_id, movie_id, status)
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE status = ?
+            ");
+            $stmt->execute([$userId, $movieId, $targetStatus, $targetStatus]);
+        }
+    }
+
+    header("Location: dashboard.php");
+    exit;
+}
 // Fetch movies joined with logged-in user's personal movie status
 try {
-    $stmt =$pdo->prepare("
-        SELECT m.*, COALESCE(ums.status, 'none') AS status 
-        FROM movies m 
-        LEFT JOIN user_movie_status ums ON m.id = ums.movie_id AND ums.user_id = ? 
+    $stmt = $pdo->prepare("
+        SELECT m.*, COALESCE(ums.status, 'none') AS status
+        FROM movies m
+        LEFT JOIN user_movie_status ums ON m.id = ums.movie_id AND ums.user_id = ?
         ORDER BY m.id DESC
     ");
     $stmt->execute([$userId]);
-    $dbFilms =$stmt->fetchAll();
-} catch (Exception $e) {$dbFilms = [];
+    $dbFilms = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Automatically fetch real posters for films missing a poster URL
+    foreach ($dbFilms as &$film) {
+        if (empty($film['poster_url'])) {
+            $poster = fetchMoviePoster($film['title'], $film['year'], $pdo, $film['id']);
+            if ($poster) {
+                $film['poster_url'] = $poster;
+            }
+        }
+    }
+    unset($film);
+} catch (Exception $e) {
+    $dbFilms = [];
 }
 ?>
 <!DOCTYPE html>
@@ -73,7 +115,7 @@ try {
                 <line x1="21" y1="12" x2="9" y2="12"/>
               </svg>
               Logout
-            </a> 
+            </a>
           </li>
         </ul>
       </div>
@@ -104,182 +146,149 @@ try {
     </svg>
   </button>
 
-<script>
-  let films = <?php echo json_encode($dbFilms ?: []); ?>;
+  <script>
+    let films = <?php echo json_encode($dbFilms ?: []); ?>;
 
-  const badgeIcons = {
-    watched: `<svg viewBox="0 0 24 24" fill="none"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/></svg>`,
-    favorite: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.8 4c2.3-0.3 4.3 1 6.2 3.2C14 5 16 3.7 18.2 4c3.8 0.5 5.5 4.2 3.8 7.7C19.5 16.4 12 21 12 21z" stroke="currentColor" stroke-width="1.8"/></svg>`,
-    watchlist: `<svg viewBox="0 0 24 24" fill="none"><path d="M6 3h12v18l-6-4-6 4V3z" stroke="currentColor" stroke-width="1.8"/></svg>`
-  };
+    const badgeIcons = {
+      watched: `<svg viewBox="0 0 24 24" fill="none"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/></svg>`,
+      favorite: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.8 4c2.3-0.3 4.3 1 6.2 3.2C14 5 16 3.7 18.2 4c3.8 0.5 5.5 4.2 3.8 7.7C19.5 16.4 12 21 12 21z" stroke="currentColor" stroke-width="1.8"/></svg>`,
+      watchlist: `<svg viewBox="0 0 24 24" fill="none"><path d="M6 3h12v18l-6-4-6 4V3z" stroke="currentColor" stroke-width="1.8"/></svg>`
+    };
 
-  const badgeLabel = { watched: "WATCHED", favorite: "FAVORITE", watchlist: "WATCHLIST" };
+    const badgeLabel = { watched: "WATCHED", favorite: "FAVORITE", watchlist: "WATCHLIST" };
 
-  const grid = document.getElementById("grid");
-  const searchInput = document.getElementById("searchInput");
-  const tabs = document.getElementById("tabs");
-  const randomizeBtn = document.getElementById("randomizeBtn");
-  const menuToggleBtn = document.getElementById("menuToggleBtn");
-  const menuDropdown = document.getElementById("menuDropdown");
+    const grid = document.getElementById("grid");
+    const searchInput = document.getElementById("searchInput");
+    const tabs = document.getElementById("tabs");
+    const randomizeBtn = document.getElementById("randomizeBtn");
+    const menuToggleBtn = document.getElementById("menuToggleBtn");
+    const menuDropdown = document.getElementById("menuDropdown");
+    const backToTopBtn = document.getElementById("backToTopBtn");
 
-  const state = { filter: "all", query: "" };
+    const state = { filter: "all", query: "" };
 
-  function getFilteredFilms() {
-    const q = state.query.toLowerCase().trim();
-    return films.filter(f => {
-      const matchesFilter = state.filter === "all" || f.status === state.filter;
-      const matchesSearch = !q || [f.title, f.director, f.genre].join(" ").toLowerCase().includes(q);
-      return matchesFilter && matchesSearch;
-    });
-  }
-
-  function updateStats() {
-    const counts = document.querySelectorAll(".tab .count");
-    counts[0].textContent = films.length;
-    counts[1].textContent = films.filter(f => f.status === "watchlist").length;
-    counts[2].textContent = films.filter(f => f.status === "watched").length;
-    counts[3].textContent = films.filter(f => f.status === "favorite").length;
-  }
-
-  function createCard(film) {
-    const card = document.createElement("article");
-    card.className = "card";
-    card.dataset.id = film.id;
-    card.innerHTML = `
-      <div class="poster ${film.art || 'p1'}">
-        <div class="badge ${film.status}">
-          ${badgeIcons[film.status] || ''}
-          ${badgeLabel[film.status] || ''}
-        </div>
-        <div class="poster-actions">
-          <button class="action-btn" data-status="watchlist">Watchlist</button>
-          <button class="action-btn" data-status="watched">Watched</button>
-          <button class="action-btn" data-status="favorite">Favorite</button>
-        </div>
-      </div>
-      <div class="meta">
-        <div class="title-row">
-          <h2>${film.title}</h2>
-          <span class="year">${film.year}</span>
-        </div>
-        <div class="director">${film.director}</div>
-        <div class="divider"></div>
-        <div class="genre">${film.genre}</div>
-        <button class="toggle-desc-btn">Show Description</button>
-        <div class="description-container hidden">
-          <div class="note">${film.note || 'No description available.'}</div>
-        </div>
-      </div>
-    `;
-    return card;
-  }
-
-  function render() {
-    updateStats();
-    grid.innerHTML = "";
-    const filtered = getFilteredFilms();
-    if (!filtered.length) {
-      grid.innerHTML = `<p class="empty-state">No films match your search.</p>`;
-      return;
-    }
-    filtered.forEach(film => grid.appendChild(createCard(film)));
-  }
-
-  async function setFilmStatus(id, newStatus) {
-    const film = films.find(f => f.id === id);
-    if (!film) return;
-    
-    const nextStatus = film.status === newStatus ? "none" : newStatus;
-
-    try {
-      const res = await fetch('api.php?action=update_status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ movie_id: id, status: nextStatus })
+    function getFilteredFilms() {
+      const q = state.query.toLowerCase().trim();
+      return films.filter(f => {
+        const matchesFilter = state.filter === "all" || f.status === state.filter;
+        const matchesSearch = !q || [f.title, f.director, f.genre].join(" ").toLowerCase().includes(q);
+        return matchesFilter && matchesSearch;
       });
-      const data = await res.json();
-      if (data.success) {
-        film.status = nextStatus;
-        render();
-      } else {
-        alert("Failed to update status: " + data.error);
+    }
+
+    function updateStats() {
+      const counts = document.querySelectorAll(".tab .count");
+      counts[0].textContent = films.length;
+      counts[1].textContent = films.filter(f => f.status === "watchlist").length;
+      counts[2].textContent = films.filter(f => f.status === "watched").length;
+      counts[3].textContent = films.filter(f => f.status === "favorite").length;
+    }
+
+    function createCard(film) {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.dataset.id = String(film.id);
+
+      const badgeHtml = film.status && film.status !== 'none'
+        ? `<div class="badge ${film.status}">
+             ${badgeIcons[film.status] || ''}
+             ${badgeLabel[film.status] || ''}
+           </div>`
+        : '';
+
+      const posterStyle = film.poster_url ? `style="background-image: url('${film.poster_url}');"` : '';
+      const posterClass = film.poster_url ? 'poster' : `poster ${film.art || 'p1'}`;
+
+      card.innerHTML = `
+        <div class="${posterClass}" ${posterStyle}>
+          ${badgeHtml}
+          <div class="poster-actions">
+            <a href="dashboard.php?movie_id=${film.id}&status=watchlist" class="action-btn">Watchlist</a>
+            <a href="dashboard.php?movie_id=${film.id}&status=watched" class="action-btn">Watched</a>
+            <a href="dashboard.php?movie_id=${film.id}&status=favorite" class="action-btn">Favorite</a>
+          </div>
+        </div>
+        <div class="meta">
+          <div class="title-row">
+            <h2>${film.title}</h2>
+            <span class="year">${film.year}</span>
+          </div>
+          <div class="director">${film.director}</div>
+          <div class="divider"></div>
+          <div class="genre">${film.genre}</div>
+          <div class="note">${film.note || ''}</div>
+        </div>
+      `;
+
+      return card;
+    }
+
+    function render() {
+      updateStats();
+      grid.innerHTML = "";
+      const filtered = getFilteredFilms();
+
+      if (!filtered.length) {
+        grid.innerHTML = `<p class="empty-state">No films match your search.</p>`;
+        return;
       }
-    } catch (err) {
-      alert("Network error. Unable to save status.");
-    }
-  }
 
-  grid.addEventListener("click", (e) => {
-    const actionBtn = e.target.closest(".action-btn");
-    if (actionBtn) {
-      const card = actionBtn.closest(".card");
-      setFilmStatus(parseInt(card.dataset.id, 10), actionBtn.dataset.status);
-      return;
+      filtered.forEach(film => grid.appendChild(createCard(film)));
     }
-    const descBtn = e.target.closest(".toggle-desc-btn");
-    if (descBtn) {
-      const containerEl = descBtn.nextElementSibling;
-      const isHidden = containerEl.classList.toggle("hidden");
-      descBtn.textContent = isHidden ? "Show Description" : "Hide Description";
-    }
-  });
 
-  tabs.addEventListener("click", (e) => {
-    const btn = e.target.closest(".tab");
-    if (!btn) return;
-    state.filter = btn.dataset.filter;
-    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-    btn.classList.add("active");
+    tabs.addEventListener("click", (e) => {
+      const btn = e.target.closest(".tab");
+      if (!btn) return;
+      state.filter = btn.dataset.filter;
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      btn.classList.add("active");
+      render();
+    });
+
+    searchInput.addEventListener("input", (e) => {
+      state.query = e.target.value;
+      render();
+    });
+
+    menuToggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menuDropdown.classList.toggle("show");
+    });
+
+    randomizeBtn.addEventListener("click", () => {
+      const availableFilms = getFilteredFilms();
+      if (!availableFilms.length) return;
+
+      document.querySelectorAll(".card.highlighted").forEach(c => c.classList.remove("highlighted"));
+
+      const chosenFilm = availableFilms[Math.floor(Math.random() * availableFilms.length)];
+      const cardEl = document.querySelector(`.card[data-id="${chosenFilm.id}"]`);
+
+      if (cardEl) {
+        cardEl.classList.add("highlighted");
+        cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+
+      menuDropdown.classList.remove("show");
+    });
+
+    window.addEventListener("scroll", () => {
+      if (window.scrollY > 300) {
+        backToTopBtn.classList.add("visible");
+      } else {
+        backToTopBtn.classList.remove("visible");
+      }
+    });
+
+    backToTopBtn.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".menu-container")) menuDropdown.classList.remove("show");
+    });
+
     render();
-  });
-
-  searchInput.addEventListener("input", (e) => {
-    state.query = e.target.value;
-    render();
-  });
-
-  menuToggleBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    menuDropdown.classList.toggle("show");
-  });
-
-  // Randomize button click listener logic
-  randomizeBtn.addEventListener("click", () => {
-    const availableFilms = getFilteredFilms();
-    if (!availableFilms.length) return;
-
-    // Clear previous highlight
-    document.querySelectorAll(".card.highlighted").forEach(c => c.classList.remove("highlighted"));
-
-    // Pick a random film from currently filtered list
-    const chosenFilm = availableFilms[Math.floor(Math.random() * availableFilms.length)];
-    const cardEl = document.querySelector(`.card[data-id="${chosenFilm.id}"]`);
-
-    if (cardEl) {
-      cardEl.classList.add("highlighted");
-      cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-
-    menuDropdown.classList.remove("show");
-  });
-
-  window.addEventListener("scroll", () => {
-    if (window.scrollY > 300) {
-      backToTopBtn.classList.add("visible");
-    } else {
-      backToTopBtn.classList.remove("visible");
-    }
-  });
-
-  backToTopBtn.addEventListener("click", () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest(".menu-container")) menuDropdown.classList.remove("show");
-  });
-
-  render();
-</script>  
+  </script>
 </body>
 </html>
